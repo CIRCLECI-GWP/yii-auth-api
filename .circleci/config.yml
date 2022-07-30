@@ -1,48 +1,40 @@
 version: 2.1
-
 jobs:
   build:
+    working_directory: ~/repo
     docker:
-      - image: cimg/php:8.1-browsers
-      - image: mysql:8.0
-        command: --default-authentication-plugin=mysql_native_password
-        environment:
-          MYSQL_ROOT_PASSWORD: secret
-          MYSQL_DATABASE: auth_api_test
-
+      - image: cimg/node:16.13.2
     steps:
       - checkout
-
-      - run: sudo apt update
-      - run: sudo apt install php8.1-mysql
-
       - run:
-          name: install dockerize
-          command: wget https://github.com/jwilder/dockerize/releases/download/$DOCKERIZE_VERSION/dockerize-linux-amd64-$DOCKERIZE_VERSION.tar.gz && sudo tar -C /usr/local/bin -xzvf dockerize-linux-amd64-$DOCKERIZE_VERSION.tar.gz && rm dockerize-linux-amd64-$DOCKERIZE_VERSION.tar.gz
-          environment:
-            DOCKERIZE_VERSION: v0.3.0
-      - run:
-          name: Wait for db
-          command: dockerize -wait tcp://localhost:3306 -timeout 1m
-
+          name: Update NPM
+          command: "sudo npm install -g npm"
       - restore_cache:
-          keys:
-            - v1-dependencies-{{ checksum "composer.json" }}
-            - v1-dependencies-
-
+          key: dependency-cache-{{ checksum "package-lock.json" }}
       - run:
-          name: "Install dependencies"
-          command: composer install
-
+          name: Install Dependencies
+          command: npm install
       - save_cache:
-          key: v1-dependencies-{{ checksum "composer.json" }}
+          key: dependency-cache-{{ checksum "package-lock.json" }}
           paths:
-            - ./vendor
-
+            - ./node_modules
       - run:
-          name: "Prime test database"
-          command: php tests/bin/yii migrate --interactive=0
-
+          name: Build React App
+          command: npm run build
+      - save_cache:
+          key: app-build-cache-{{ .Branch }}
+          paths:
+            - ./build
       - run:
-          name: "Run tests"
-          command: php vendor/bin/codecept run api
+          name: Deploy to Netlify
+          command: ./node_modules/.bin/netlify deploy --site $NETLIFY_SITE_ID --auth $NETLIFY_ACCESS_TOKEN --prod --dir=build
+workflows:
+  version: 2
+  build-deploy:
+    jobs:
+      - build:
+          filters:
+            branches:
+              only:
+                - main
+
